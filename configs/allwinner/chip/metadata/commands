@@ -1,0 +1,2 @@
+install Installs to the CHIP.
+buildimage Builds an image using a loopback device.
