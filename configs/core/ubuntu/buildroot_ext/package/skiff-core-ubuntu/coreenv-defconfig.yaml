@@ -51,4 +51,4 @@ images:
       # avoid docker hub rate limits
       registry: quay.io
     build:
-      source: /opt/skiff/coreenv/base
+      source: /opt/skiff/coreenv/skiff-core-ubuntu

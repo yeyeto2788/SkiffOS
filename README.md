@@ -7,7 +7,7 @@
 
 [SkiffOS] is a lightweight operating system for [any Linux-compatible computer],
 ranging from [RPi], [Odroid], [NVIDIA Jetson], to [Desktop PCs], Laptops (i.e.
-[Apple MacBook]), [Phones], [Cloud VMs], and more. It is:
+[Apple MacBook]), [Phones], [Cloud VMs], and even [Web Browsers]. It is:
 
  - **Familiar**: uses simple Makefile and KConfig language for configuration.
  - **Flexible**: supports any OS distribution inside containers w/ ssh drop-in.
@@ -15,19 +15,11 @@ ranging from [RPi], [Odroid], [NVIDIA Jetson], to [Desktop PCs], Laptops (i.e.
  - **Reliable**: read-only minimal in-RAM host system boots reliably every time.
  - **Reproducible**: offline and deterministic builds for reproducible behavior.
 
-SkiffOS adds a configuration layering system to the [Buildroot] cross-compiler,
-which makes it easy to re-target applications to new hardware. Layers are merged
-together as specified in the `SKIFF_CONFIG` comma-separated environment
-variable. As a basic example: `SKIFF_CONFIG=pi/4,core/gentoo` starts Gentoo on a
-Raspberry Pi 4 in a Docker container.
-
-The default configuration produces a minimal (~100Mb) in-RAM host OS with SSH
-and network connectivity, and includes a comprehensive set of debug tools. The
-host OS can be easily remotely updated with the push_image script, using rsync.
-
-The "skiff/core" layer enables Docker ("apps/docker") and a default environment
-based on Ubuntu with a full graphical desktop environment. Others including
-"core/gentoo" and "core/dietpi" are available.
+SkiffOS adds a configuration package system to the [Buildroot] cross-compiler,
+which makes it easy to re-target applications to new hardware. Packages are
+merged together as specified in the `SKIFF_CONFIG` comma-separated environment
+variable. For example: `SKIFF_CONFIG=pi/4,core/gentoo` will run Gentoo on a
+Raspberry Pi 4.
 
 Most Linux devices have a unique set of requirements for kernel, firmware, and
 hardware support packages. The SkiffOS host OS separates hardware-specific
@@ -43,6 +35,7 @@ updates across multiple hardware combinations.
 [Odroid]: https://linux-hardware.org/?probe=927be03a24
 [Phones]: https://linux-hardware.org/?probe=329e6f9308
 [RPi]: https://linux-hardware.org/?probe=c3d8362f28
+[Web Browsers]: https://copy.sh/v86/?profile=copy/skiffos
 [SkiffOS]: ./resources/paper.pdf
 
 ## Getting started
@@ -53,43 +46,42 @@ updates across multiple hardware combinations.
 
 [Buildroot dependencies]: https://buildroot.org/downloads/manual/manual.html#requirement-mandatory
 
-This example uses `pi/4`, which can be replaced with any of the hardware support
-packages listed in the [Supported Systems](#supported-systems) table.
+This example uses `pi/4` for the Raspberry Pi 4, see [Supported Systems].
+
+[Supported Systems]: #supported-systems
+
+[Create a SSH key] on your development machine. Add the public key to your build
+with `cp ~/.ssh/*.pub ./overrides/root_overlay/etc/skiff/authorized_keys`. This
+will be needed to enable SSH access.
+
+[Create a SSH key]: https://docs.github.com/en/authentication/connecting-to-github-with-ssh/generating-a-new-ssh-key-and-adding-it-to-the-ssh-agent#generating-a-new-ssh-key
 
 ```sh
-$ make                             # lists all available layers
+$ make                             # lists all available options
 $ export SKIFF_WORKSPACE=default   # optional: supports multiple SKIFF_CONFIG at once
 $ export SKIFF_CONFIG=pi/4,skiff/core
 $ make configure                   # configure the system
 $ make compile                     # build the system
 ```
 
-After you run `make configure` your `SKIFF_CONFIG` selection will be saved and
-automatically restored in future sessions. The compile command builds the OS.
+After you run `make configure` your `SKIFF_CONFIG` selection will be saved. The
+build can be interrupted and later resumed with `make compile`.
 
-The optional `SKIFF_WORKSPACE` variable defaults to `default`, but is useful for
-compiling multiple `SKIFF_CONFIG` simultaneously. Each workspace is isolated
-from the others and can have a completely different configuration. The build can
-be interrupted and resumed with `make compile` as needed.
-
-You will need a SSH public key to access the system. If you don't have one,
-[create a SSH key] on your development machine. Add the public key (located at
-`~/.ssh/id_ed25519.pub`) to your build by copying it to
-`overrides/root_overlay/etc/skiff/authorized_keys/my-key.pub`. The keys can also
-be added to a configuration layer (instead of `overrides`).
-
-[create a SSH key]: https://docs.github.com/en/authentication/connecting-to-github-with-ssh/generating-a-new-ssh-key-and-adding-it-to-the-ssh-agent#generating-a-new-ssh-key
+`SKIFF_WORKSPACE` defaults to `default` and is used to compile multiple
+`SKIFF_CONFIG` simultaneously.
 
 There are many other utility commands made available by Buildroot, which can be
 listed using `make br/help`, some examples:
 
 ```sh
-$ make br/menuconfig # optionally explore Buildroot config
+$ make br/menuconfig # explore Buildroot config menu
 $ make br/sdk        # build relocatable SDK for target
 $ make br/graph-size # graph the target packages sizes
 ```
 
-You can add `apps/portainer` to `SKIFF_CONFIG` to enable the Portainer UI.
+There are other [application packages] available i.e. `apps/podman`.
+
+[application packages]: ./configs/apps
 
 ### Flashing the SD Card
 
@@ -128,6 +120,10 @@ $ ./scripts/push_image.bash root@my-ip-address
 
 The SkiffOS upgrade (or downgrade) will take effect on next reboot.
 
+### Podman
+
+Use the `apps/podman` configuration package to enable Podman support.
+
 ## Supported Systems
 
 ![CI](https://github.com/skiffos/SkiffOS/workflows/CI/badge.svg?branch=master)
@@ -137,56 +133,58 @@ Linux-compatible machine.
 
 Here are the boards/systems currently supported:
 
-| **Board**             | **Config Package**    | **Bootloader**   | **Kernel**     | **Notes**     |
-|-----------------------|-----------------------|------------------|----------------|---------------|
-| [Docker Img]          | [virt/docker]         | N/A              | N/A            | Run in Docker |
-| [Qemu]                | [virt/qemu]           | N/A              | ✔ 5.18.7       | Run in QEmu   |
-| VirtualBox            | [virt/virtualbox]     | N/A              | ✔ 5.18.7       | Run in VM     |
-| [WSL] on Windows      | [virt/wsl]            | N/A              | N/A            | Run in WSL2   |
-|-----------------------|-----------------------|------------------|----------------|---------------|
-| [Allwinner Nezha]     | [allwinner/nezha]     | ✔ U-boot 2022.04 | ✔ sm-5.18-rc7  | RISC-V D1     |
-| [Apple Macbook]       | [apple/macbook]       | ✔ [rEFInd]       | ✔ 5.18.7       | ✔ Tested      |
-| [BananaPi M1+/Pro]    | [bananapi/m1plus]     | ✔ U-Boot 2022.04 | ✔ 5.18.7       | ⚠ Obsolete    |
-| [BananaPi M1]         | [bananapi/m1]         | ✔ U-Boot 2022.04 | ✔ 5.18.7       | ⚠ Obsolete    |
-| [BananaPi M2+]        | [bananapi/m2plus]     | ✔ U-Boot 2022.04 | ✔ 5.18.7       |               |
-| [BananaPi M2]         | [bananapi/m2]         | ✔ U-Boot 2022.04 | ✔ 5.18.7       | ⚠ Obsolete    |
-| [BananaPi M3]         | [bananapi/m3]         | ✔ U-Boot 2022.04 | ✔ 5.18.7       | ✔ Tested      |
-| [BeagleBoard X15]     | [beaglebone/x15]      | ✔ U-Boot 2022.04 | ✔ 5.10.109-ti  |               |
-| [BeagleBone AI]       | [beaglebone/ai]       | ✔ U-Boot 2022.04 | ✔ 5.10.109-ti  |               |
-| [BeagleBone Black]    | [beaglebone/black]    | ✔ U-Boot 2022.04 | ✔ 5.10.109-ti  |               |
-| [BeagleBoard BeagleV] | [starfive/visionfive] | ✔ U-Boot 2021.04 | ✔ sv-5.19-rc3  | RISC-V        |
-| [Intel x86/64]        | [intel/x64]           | ✔ Grub           | ✔ 5.18.7       | ✔ Tested      |
-| [NVIDIA Jetson Nano]  | [jetson/nano]         | ✔ U-Boot         | ✔ [nv-4.9.309] | ✔ Tested      |
-| [NVIDIA Jetson TX2]   | [jetson/tx2]          | ✔ U-Boot         | ✔ [nv-4.9.309] | ✔ Tested      |
-| [Odroid C2]           | [odroid/c2]           | ✔ U-Boot 2022.04 | ✔ tb-5.18.1    | ⚠ Obsolete    |
-| [Odroid C4]           | [odroid/c4]           | ✔ U-Boot 2022.04 | ✔ tb-5.18.1    |               |
-| [Odroid HC1]          | [odroid/xu]           | ✔ U-Boot 2017.07 | ✔ tb-5.18.1    | ⚠ Obsolete    |
-| [Odroid HC2]          | [odroid/xu]           | ✔ U-Boot 2017.07 | ✔ tb-5.18.1    | ✔ Tested      |
-| [Odroid HC4]          | [odroid/hc4]          | ✔ U-Boot 2022.07 | ✔ tb-5.18.1    |               |
-| [Odroid M1]           | [odroid/m1]           | ✔ U-Boot 2017.09 | ✔ tb-5.18.1    |               |
-| [Odroid N2]+          | [odroid/n2]           | ✔ U-Boot 2022.04 | ✔ tb-5.18.1    | ✔ Tested      |
-| [Odroid U]            | [odroid/u]            | ✔ U-Boot 2022.04 | ✔ tb-5.18.1    | ⚠ Obsolete    |
-| [Odroid XU3]          | [odroid/xu]           | ✔ U-Boot 2017.07 | ✔ tb-5.18.1    | ⚠ Obsolete    |
-| [Odroid XU4]          | [odroid/xu]           | ✔ U-Boot 2017.07 | ✔ tb-5.18.1    | ✔ Tested      |
-| [OrangePi Lite]       | [orangepi/lite]       | ✔ U-Boot 2018.05 | ✔ 5.18.7       |               |
-| [OrangePi Zero]       | [orangepi/zero]       | ✔ U-Boot 2018.07 | ✔ 5.18.7       |               |
-| [PcDuino 3]           | [pcduino/3]           | ✔ U-Boot 2019.07 | ✔ 5.18.7       |               |
-| [PcEngines APU2]      | [pcengines/apu2]      | ✔ CoreBoot       | ✔ 5.18.7       |               |
-| [Pi 0]                | [pi/0]                | N/A              | ✔ rpi-5.15.44  | ✔ Tested      |
-| [Pi 1]                | [pi/1]                | N/A              | ✔ rpi-5.15.44  |               |
-| [Pi 3] + 1, 2         | [pi/3]                | N/A              | ✔ rpi-5.15.44  | ✔ Tested      |
-| [Pi 4]                | [pi/4]                | N/A              | ✔ rpi-5.15.44  | ✔ Tested      |
-| [Pi 4] (32bit mode)   | [pi/4x32]             | N/A              | ✔ rpi-5.15.44  | ✔ Tested      |
-| [Pine64 H64]          | [pine64/h64]          | ✔ U-Boot 2022.04 | ✔ megi-5.18.4  |               |
-| [PineBook A64]        | [pine64/book_a64]     | ✔ U-Boot (bin)   | ✔ megi-5.18.4  | ⚠ Obsolete    |
-| [PineBook Pro]        | [pine64/book]         | ✔ U-Boot (bin)   | ✔ megi-5.18.4  | ✔ Tested      |
-| [PinePhone]           | [pine64/phone]        | ✔ U-Boot (bin)   | ✔ megi-5.18.4  | ✔ Tested      |
-| [Rock64] rk3328       | [pine64/rock64]       | ✔ U-Boot 2022.04 | ✔ megi-5.18.4  | ✔ Tested      |
-| [RockPro64]           | [pine64/rockpro64]    | ✔ U-Boot (bin)   | ✔ megi-5.18.4  | ✔ Tested      |
-| [Sipeed LicheeRV]     | [allwinner/licheerv]  | ✔ U-Boot 2022.04 | ✔ sm-5.18-rc7  | RISC-V D1     |
-| [StarFive VisionFive] | [starfive/visionfive] | ✔ U-Boot 2021.04 | ✔ sv-5.19-rc3  | RISC-V        |
-| [USBArmory Mk2]       | [usbarmory/mk2]       | ✔ U-Boot 2020.10 | ✔ 5.18.7       | ✔ Tested      |
-| [Wandboard]           | [freescale/wandboard] | ✔ U-Boot 2022.04 | ✔ 5.18.7       |               |
+| **Board**             | **Config Package**    | **Bootloader**   | **Kernel**     | **Notes**        |
+|-----------------------|-----------------------|------------------|----------------|------------------|
+| VirtualBox            | [virt/virtualbox]     | N/A              | ✔ 5.19.1       | Run in VM        |
+| [Docker Img]          | [virt/docker]         | N/A              | N/A            | Run in Docker    |
+| [Qemu]                | [virt/qemu]           | N/A              | ✔ 5.19.1       | Run in QEmu      |
+| [V86] on WebAssembly  | [browser/v86]         | [V86]            | ✔ 5.19.1       | [Run in Browser] |
+| [WSL] on Windows      | [virt/wsl]            | N/A              | N/A            | Run in WSL2      |
+|-----------------------|-----------------------|------------------|----------------|------------------|
+| [Allwinner Nezha]     | [allwinner/nezha]     | ✔ U-boot 2022.04 | ✔ sm-5.18-rc7  | RISC-V D1        |
+| [Apple Macbook]       | [apple/macbook]       | ✔ [rEFInd]       | ✔ 5.19.1       | ✔ Tested         |
+| [BananaPi M1+/Pro]    | [bananapi/m1plus]     | ✔ U-Boot 2022.04 | ✔ 5.19.1       | ⚠ Obsolete       |
+| [BananaPi M1]         | [bananapi/m1]         | ✔ U-Boot 2022.04 | ✔ 5.19.1       | ⚠ Obsolete       |
+| [BananaPi M2+]        | [bananapi/m2plus]     | ✔ U-Boot 2022.04 | ✔ 5.19.1       |                  |
+| [BananaPi M2]         | [bananapi/m2]         | ✔ U-Boot 2022.04 | ✔ 5.19.1       | ⚠ Obsolete       |
+| [BananaPi M3]         | [bananapi/m3]         | ✔ U-Boot 2022.04 | ✔ 5.19.1       | ✔ Tested         |
+| [BeagleBoard X15]     | [beaglebone/x15]      | ✔ U-Boot 2022.04 | ✔ 5.10.109-ti  |                  |
+| [BeagleBone AI]       | [beaglebone/ai]       | ✔ U-Boot 2022.04 | ✔ 5.10.109-ti  |                  |
+| [BeagleBone Black]    | [beaglebone/black]    | ✔ U-Boot 2022.04 | ✔ 5.10.109-ti  |                  |
+| [BeagleBoard BeagleV] | [starfive/visionfive] | ✔ U-Boot 2021.04 | ✔ sv-5.19-rc3  | RISC-V           |
+| [Intel x86/64]        | [intel/x64]           | ✔ Grub           | ✔ 5.19.1       | ✔ Tested         |
+| [ModalAI Voxl2]       | [modalai/voxl2]       | N/A              | ✔ msm-4.19.125 |                  |
+| [NVIDIA Jetson Nano]  | [jetson/nano]         | ✔ U-Boot         | ✔ [nv-4.9.309] | ✔ Tested         |
+| [NVIDIA Jetson TX2]   | [jetson/tx2]          | ✔ U-Boot         | ✔ [nv-4.9.309] | ✔ Tested         |
+| [Odroid C2]           | [odroid/c2]           | ✔ U-Boot 2022.07 | ✔ tb-5.18.12   | ⚠ Obsolete       |
+| [Odroid C4]           | [odroid/c4]           | ✔ U-Boot 2022.07 | ✔ tb-5.18.12   |                  |
+| [Odroid HC1]          | [odroid/xu]           | ✔ U-Boot 2017.07 | ✔ tb-5.18.12   | ⚠ Obsolete       |
+| [Odroid HC2]          | [odroid/xu]           | ✔ U-Boot 2017.07 | ✔ tb-5.18.12   | ✔ Tested         |
+| [Odroid HC4]          | [odroid/hc4]          | ✔ U-Boot 2022.07 | ✔ tb-5.18.12   |                  |
+| [Odroid M1]           | [odroid/m1]           | ✔ U-Boot 2017.09 | ✔ tb-5.18.12   |                  |
+| [Odroid N2]+          | [odroid/n2]           | ✔ U-Boot 2022.07 | ✔ tb-5.18.12   | ✔ Tested         |
+| [Odroid U]            | [odroid/u]            | ✔ U-Boot 2022.07 | ✔ tb-5.18.12   | ⚠ Obsolete       |
+| [Odroid XU3]          | [odroid/xu]           | ✔ U-Boot 2017.07 | ✔ tb-5.18.12   | ⚠ Obsolete       |
+| [Odroid XU4]          | [odroid/xu]           | ✔ U-Boot 2017.07 | ✔ tb-5.18.12   | ✔ Tested         |
+| [OrangePi Lite]       | [orangepi/lite]       | ✔ U-Boot 2018.05 | ✔ 5.19.1       |                  |
+| [OrangePi Zero]       | [orangepi/zero]       | ✔ U-Boot 2018.07 | ✔ 5.19.1       |                  |
+| [PcDuino 3]           | [pcduino/3]           | ✔ U-Boot 2019.07 | ✔ 5.19.1       |                  |
+| [PcEngines APU2]      | [pcengines/apu2]      | ✔ CoreBoot       | ✔ 5.19.1       |                  |
+| [Pi 0]                | [pi/0]                | N/A              | ✔ rpi-5.15.56  | ✔ Tested         |
+| [Pi 1]                | [pi/1]                | N/A              | ✔ rpi-5.15.56  |                  |
+| [Pi 3] + 1, 2         | [pi/3]                | N/A              | ✔ rpi-5.15.56  | ✔ Tested         |
+| [Pi 4]                | [pi/4]                | N/A              | ✔ rpi-5.15.56  | ✔ Tested         |
+| [Pi 4] (32bit mode)   | [pi/4x32]             | N/A              | ✔ rpi-5.15.56  | ✔ Tested         |
+| [Pine64 H64]          | [pine64/h64]          | ✔ U-Boot 2022.04 | ✔ megi-5.19.1  |                  |
+| [PineBook A64]        | [pine64/book_a64]     | ✔ U-Boot (bin)   | ✔ megi-5.19.1  | ⚠ Obsolete       |
+| [PineBook Pro]        | [pine64/book]         | ✔ U-Boot (bin)   | ✔ megi-5.19.1  | ✔ Tested         |
+| [PinePhone]           | [pine64/phone]        | ✔ U-Boot (bin)   | ✔ megi-5.19.1  | ✔ Tested         |
+| [Rock64] rk3328       | [pine64/rock64]       | ✔ U-Boot 2022.04 | ✔ megi-5.19.1  | ✔ Tested         |
+| [RockPro64]           | [pine64/rockpro64]    | ✔ U-Boot (bin)   | ✔ megi-5.19.1  | ✔ Tested         |
+| [Sipeed LicheeRV]     | [allwinner/licheerv]  | ✔ U-Boot 2022.04 | ✔ sm-5.18-rc7  | RISC-V D1        |
+| [StarFive VisionFive] | [starfive/visionfive] | ✔ U-Boot 2021.04 | ✔ sv-5.19-rc3  | RISC-V           |
+| [USBArmory Mk2]       | [usbarmory/mk2]       | ✔ U-Boot 2020.10 | ✔ 5.19.1       | ✔ Tested         |
+| [Wandboard]           | [freescale/wandboard] | ✔ U-Boot 2022.04 | ✔ 5.19.1       |                  |
 
 [Allwinner Nezha]: https://linux-sunxi.org/Allwinner_Nezha
 [Apple Macbook]: https://wiki.gentoo.org/wiki/Apple_Macbook_Pro_Retina_(early_2013)
@@ -199,8 +197,9 @@ Here are the boards/systems currently supported:
 [BeagleBone Black]: http://beagleboard.org/black
 [BeagleBoard X15]: http://beagleboard.org/x15
 [BeagleBoard BeagleV]: https://beagleboard.org/static/beagleV/beagleV.html
-[Docker Img]: ./docker 
+[Docker Img]: ./docker
 [Intel x86/64]: ./configs/intel/x64
+[ModalAI Voxl2]: https://www.modalai.com/products/voxl-2
 [NVIDIA Jetson Nano]: ./configs/jetson
 [NVIDIA Jetson TX2]: ./configs/jetson
 [Odroid C2]: https://wiki.odroid.com/odroid-c2/odroid-c2
@@ -228,9 +227,11 @@ Here are the boards/systems currently supported:
 [Qemu]: ./configs/virt/qemu
 [Rock64]: https://www.pine64.org/devices/single-board-computers/rock64/
 [RockPro64]: https://www.pine64.org/rockpro64/
+[Run in Browser]:  https://copy.sh/v86/?profile=copy/skiffos
 [Sipeed LicheeRV]: https://linux-sunxi.org/Sipeed_Lichee_RV
 [StarFive VisionFive]: https://ameridroid.com/products/visionfive-starfive
 [USBArmory Mk2]: https://github.com/f-secure-foundry/usbarmory
+[V86]: https://github.com/copy/v86
 [Wandboard]: https://elinux.org/Wandboard
 [WSL]: https://docs.microsoft.com/en-us/windows/wsl/
 [nv-4.9.309]: https://github.com/skiffos/linux/tree/skiff-jetson-4.9.x
@@ -247,10 +248,12 @@ Here are the boards/systems currently supported:
 [beaglebone/ai]: ./configs/beaglebone
 [beaglebone/black]: ./configs/beaglebone
 [beaglebone/x15]: ./configs/beaglebone
+[browser/v86]: ./configs/browser/v86
 [freescale/wandboard]: ./configs/freescale/wandboard
 [intel/x64]: ./configs/intel/x64
 [jetson/nano]: ./configs/jetson/nano
 [jetson/tx2]: ./configs/jetson/tx2
+[modalai/voxl2]: ./configs/modalai/voxl2
 [odroid/c2]: ./configs/odroid
 [odroid/c4]: ./configs/odroid
 [odroid/m1]: ./configs/odroid
@@ -290,39 +293,30 @@ SkiffOS, please **[open an issue].**
 
 [open an issue]: https://github.com/skiffos/SkiffOS/issues/new
 
-## Skiff Core
+## SkiffOS Core
 
-[![View Demo](https://asciinema.org/a/KFjeljuEhMBfmm5klUrkmflHe.svg)](https://asciinema.org/a/KFjeljuEhMBfmm5klUrkmflHe)
+[![View
+Demo](https://asciinema.org/a/KFjeljuEhMBfmm5klUrkmflHe.svg)](https://asciinema.org/a/KFjeljuEhMBfmm5klUrkmflHe)
 
-The Skiff Core subsystem, enabled with the `skiff/core` layer or by selecting
-any of the core environment packages, automatically configures mappings between
-users and containerized environments. It maps incoming SSH sessions accordingly:
+SkiffOS Core runs Linux distributions in privileged containers:
 
- - Configured using a YAML configuration file `skiff-core.yaml**.
- - The container image is either pulled or built from scratch.
- - systemd and/or other init systems operate as PID 1 inside the container.
+ - [YAML configuration] for mapping users to containers
+ - systemd and/or other init systems operate as PID 1 inside the container
+ - container images can be pulled or compiled from scratch
 
-This allows any distribution to be run as a containerized guest with Skiff. The
-config file structure is flexible, and allows for any number of containers,
-users, and images to be defined and built. Desktop environments work as expected.
+[YAML configuration]: https://github.com/skiffos/skiff-core#configuration
 
-### Environment Presets
+Adding **skiff/core** to `SKIFF_CONFIG` enables Debian Sid with an XFCE desktop.
 
-**skiff/core** comes with Debian Sid with a XFCE desktop on default.
+Other distributions and images supported:
 
-Any existing GNU/Linux system with compatibility with the running kernel version
-can be loaded as a Docker image with the `docker import` command.
-
-All core configurations work with all target platforms.
-
-The primary distributions and images supported are:
-
-| **Distribution**  | **Config Package** | **Notes**              |
-|-------------------|--------------------|------------------------|
-| [Alpine] Linux    | core/alpine        | OpenRC                 |
-| [Debian] Bullseye | [core/debian]      | XFCE desktop           |
-| [Gentoo]          | core/gentoo        | Based on latest stage3 |
-| Ubuntu            | skiff/core         | Ubuntu Jammy desktop   |
+| **Distribution** | **Config Package** | **Notes**              |
+|------------------|--------------------|------------------------|
+| [Alpine]         | core/alpine        | OpenRC                 |
+| [Debian] Sid     | skiff/core         | Default: XFCE desktop  |
+| [Fedora]         | core/fedora        | Minimal desktop        |
+| [Gentoo]         | core/gentoo        | Based on latest stage3 |
+| [Ubuntu]         | core/ubuntu        | Snaps & Ubuntu Desktop |
 
 Other less frequently updated images:
 
@@ -334,12 +328,13 @@ Other less frequently updated images:
 | [NixOS]                 | core/nixos         |                           |
 | [NixOS] with [XFCE]     | core/nixos_xfce    |                           |
 
-There are also core images specific to [pine64/phone] and [pine64/book].
+There are also core images specific to [pine64/phone] and [pine64/book] and [jetson/common].
 
 [Debian]: https://debian.org/
 [DietPi]: https://github.com/MichaIng/DietPi
 [Alpine]: https://www.alpinelinux.org/
 [Gentoo]: https://www.gentoo.org/
+[Fedora]: https://www.getfedora.org/
 [KDE Neon]: https://neon.kde.org/
 [NASA cFS]: https://github.com/nasa/cFS
 [NASA Fprime]: https://github.com/nasa/fprime
@@ -354,6 +349,7 @@ There are also core images specific to [pine64/phone] and [pine64/book].
 [core/nasa_fprime]: ./configs/core/nasa_fprime
 [pine64/book]: ./configs/pine64/book
 [pine64/phone]: ./configs/pine64/phone
+[jetson/common]: ./configs/jetson/common
 
 ### Customize Config
 
@@ -383,10 +379,10 @@ The config format is defined in [the skiff-core repo].
 [the skiff-core repo]: https://github.com/skiffos/skiff-core/blob/master/config/core_config.go
 [full example config]: ./configs/skiff/core/buildroot_ext/package/skiff-core-defconfig/coreenv-defconfig.yaml
 
-## Configuration Layers
+## Configuration Packages
 
-Skiff supports modular configuration layers. A configuration directory contains
-kernel configs, buildroot configs, system overlays, and misc. files.
+SkiffOS supports modular configuration packages: kernel & buildroot configs,
+root filesystem overlays, patches, hooks, and other resources.
 
 Layers are named as `namespace/name`. For example, a Raspberry Pi 4
 configuration would be `pi/4` and Docker is `apps/docker`.
@@ -435,13 +431,13 @@ You can set the following env variables to control this process:
  - `SKIFF_EXTRA_CONFIGS_PATH`: Colon `:` separated list of paths to look for config packages.
  - `SKIFF_CONFIG`: Name of skiff config to use, or comma separated list to overlay, with the later options taking precedence
 
-These packages will be available in the Skiff system.
+These packages will be available in the SkiffOS system.
 
-### Local Overrides
+### Overrides
 
-It's often useful to be able to adjust the configs locally during development
-without actually creating a new configuration layer. This can be easily done
-with the [overrides](./overrides) layer.
+It's often useful to be able to adjust the configs during development without
+actually creating a new configuration layer. This can be easily done with the
+[overrides](./overrides) layer.
 
 The overrides directory is treated as an additional configuration layer. The
 layout of the configuration layers is described above. Overrides is ignored by
@@ -451,12 +447,14 @@ To apply the changes & re-pack the build, run "make configure compile" again.
 
 ## Workspaces
 
-Workspaces allow you to configure and compile multiple systems at a time.
+Use Workspaces to compile multiple `SKIFF_CONFIG` combinations simultaneously.
 
-Set `SKIFF_WORKSPACE` to the name of the workspace you want to use. The
-Buildroot setup will be constructed in `workspaces/$SKIFF_WORKSPACE`. You can
-also place configuration files in `overrides/workspaces/$SKIFF_WORKSPACE/` to
-override settings for that particular workspace locally.
+The `SKIFF_WORKSPACE` environment variable controls which workspace is selected.
+
+The directory at `workspaces/$SKIFF_WORKSPACE` contains the Buildroot build directory. 
+
+Configuration files in `overrides/workspaces/$SKIFF_WORKSPACE/` will override
+settings for that workspace using the configuration package structure.
 
 ## Virtualization
 
@@ -473,7 +471,7 @@ $ make cmd/virt/qemu/run
 
 ### Docker
 
-Here is a minimal working example of running Skiff in Docker:
+Here is a minimal working example of running SkiffOS in Docker:
 
 ```sh
 $ SKIFF_CONFIG=virt/docker,skiff/core make configure compile
