@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <ftw.h>
 
 #include <sys/mount.h>
 #include <sys/stat.h>
@@ -24,6 +25,8 @@
 #define MNT_DETACH 0x00000002
 #endif
 
+#define MAX_RESIZE2FS_DEV_LEN 256
+
 // To wait for a file to exist before starting:
 // #define WAIT_EXISTS "/dev/mmcblk0"
 
@@ -33,11 +36,14 @@
 // To mount / to /mnt/boot
 // #define ROOT_AS_BOOT
 
-// To mount a device to /mnt/boot before the rootfs.
+// To mount a path or device to /mnt/boot before the rootfs.
 // #define MOUNT_BOOT "/dev/mmcblk0p1"
 
-// To mount / to /mnt/boot before the rootfs.
-// #define MOUNT_BOOT_ROOT
+// To mount the path using a bind mount.
+// #define MOUNT_BOOT_BIND
+
+// To enable reading resize2fs.conf
+// #define RESIZE2FS
 
 // Controls the maximum memory usage of the tmpfs /.
 // Used as the upper layer of the overlayfs.
@@ -83,6 +89,9 @@ FILE *logfd;
 const char *pid1_log = "/dev/kmsg";
 const char *squashfs_file = SKIFF_INIT_FILE;
 
+const char *resize2fs_path = "/boot/skiff-init/resize2fs";
+const char *resize2fs_conf = "/boot/skiff-init/resize2fs.conf";
+
 #ifndef SKIFF_MOUNTS_DIR
 #define SKIFF_MOUNTS_DIR "/skiff-overlays"
 #define SKIFF_MOUNTPOINT SKIFF_MOUNTS_DIR "/system"
@@ -114,17 +123,17 @@ const char* mount_boot_fstype = MOUNT_BOOT_FSTYPE;
 const char* wait_exists_path = WAIT_EXISTS;
 #endif
 
-// Set BIND_HOST_DIRS to a space-separated list of paths to bind mount:
-// Each path should be host-dir:target-dir
-// i.e. /mydir:/my-target-dir /my-other-dir:/my-other-target-dir
-#ifndef BIND_HOST_DIRS
-#define BIND_HOST_DIRS ""
+// Set BIND_HOST_PATHS to a space-separated list of paths to bind mount:
+// Each path should be host-path:target-path
+// i.e. /mydir:/my-target-dir /init:/bin/wslpath
+#ifndef BIND_HOST_PATHS
+#define BIND_HOST_PATHS ""
 #endif
 
 char *loopdev_find_unused();
 int loopdev_setup_device(const char *file, uint64_t offset, const char *device);
 void write_skiff_init_pid(pid_t pid);
-void do_bind_host_dirs(void);
+void do_bind_host_paths(void);
 
 int main(int argc, char *argv[]) {
   int res = 0;
@@ -223,6 +232,76 @@ int main(int argc, char *argv[]) {
   }
 #endif
 
+  // resize filesystems if necessary
+  // it is assumed that root= was set to the "persist" partition and that the
+  // boot data is stored in /boot. this may be changed later to support more
+  // exotic setups.
+#ifdef RESIZE2FS
+  if (stat(resize2fs_path, &st) == 0 && stat(resize2fs_conf, &st) == 0) {
+    // read the path(s) to resize from the conf file.
+    // all lines not starting with # are assumed to be paths to device files.
+    // all lines must have a /dev prefix.
+    FILE *r2conf = fopen(resize2fs_conf, "r");
+    char *linebuf = (char *)malloc(MAX_RESIZE2FS_DEV_LEN * sizeof(char));
+    while (fgets(linebuf, MAX_RESIZE2FS_DEV_LEN - 1, r2conf)) {
+      linebuf[MAX_RESIZE2FS_DEV_LEN - 1] = 0;
+      if (linebuf[0] == '#') {
+        continue;
+      }
+      linebuf[strcspn(linebuf, "\n")] = 0;
+      linebuf[strcspn(linebuf, " ")] = 0;
+      if (strlen(linebuf) < 6) {
+        fprintf(logfd, "SkiffOS resize2fs: %s: line too short: %s\n",
+                resize2fs_conf, linebuf);
+        continue;
+      }
+      if (memcmp(linebuf, "/dev/", 5) != 0) {
+        fprintf(logfd, "SkiffOS resize2fs: %s: expected /dev/ prefix: %s\n",
+                resize2fs_conf, linebuf);
+        continue;
+      }
+
+      fprintf(logfd, "SkiffOS resize2fs: resizing persist filesystem: %s\n",
+              linebuf);
+      pid_t id1 = fork();
+      if (id1 == 0) {
+        dup2(fileno(logfd), fileno(stdout));
+        dup2(fileno(logfd), fileno(stderr));
+
+        // re-use environment (in child process)
+        char **r2fsargv = (char **)malloc(4 * sizeof(const char *));
+        r2fsargv[0] = (char *)resize2fs_path;
+        r2fsargv[1] = (char *)"-F";
+        r2fsargv[2] = linebuf;
+        r2fsargv[3] = NULL;
+        res = execve(resize2fs_path, r2fsargv, environ);
+        free(r2fsargv);
+        if (res != 0) {
+          res = errno;
+          fprintf(logfd,
+                  "SkiffOS resize2fs: failed to exec resize2fs process on %s: "
+                  "(%d) %s\n",
+                  linebuf, res, strerror(res));
+        }
+        return res;
+      }
+
+      // wait for resize2fs
+      waitpid(id1, NULL, 0);
+    }
+
+    free(linebuf);
+    fclose(r2conf);
+  } else {
+    res = errno;
+    fprintf(
+        logfd,
+        "SkiffOS init: cannot find resize2fs, skipping: %s and %s: (%d) %s\n",
+        resize2fs_path, resize2fs_conf, res, strerror(res));
+    res = 0;
+  }
+#endif
+
   // mount /mnt/boot if set
 #ifdef MOUNT_BOOT
   if (stat(boot_parent_mnt, &st) == -1) {
@@ -231,13 +310,13 @@ int main(int argc, char *argv[]) {
   fprintf(logfd, "SkiffOS init: mounting %s to %s...\n", mount_boot_device, boot_parent_mnt);
   unsigned long mount_boot_opts = 0;
 #ifdef MOUNT_BOOT_BIND
-  mount_boot_opts = MS_BIND|MS_SHARED;
+  mount_boot_opts = MS_BIND|MS_SHARED|MS_REC;
 #endif
   if (mount(mount_boot_device, boot_parent_mnt, mount_boot_fstype, mount_boot_opts, NULL) != 0) {
     res = errno;
     fprintf(logfd, "Failed to mount %s fstype %s to mount point %s: %s\n",
             mount_boot_device, mount_boot_fstype, boot_parent_mnt, strerror(res));
-    return res;
+    res = 0;
   }
 #endif
 
@@ -257,16 +336,16 @@ int main(int argc, char *argv[]) {
               mountpoint);
 #ifdef WRITE_SKIFF_INIT_PID
       write_skiff_init_pid(getpid());
-#endif
+#endif // WRITE_SKIFF_INIT_PID
       chmod(mountpoint, 0755);
       chdir(mountpoint);
 #ifndef NO_CHROOT_TARGET
       chroot(mountpoint);
       chdir("/");
-#endif
+#endif // NO_CHROOT_TARGET
       goto exec_init_proc;
     }
-#endif
+#endif // NO_MOVE_MOUNTPOINT_ROOT
   }
 
 #ifdef ROOT_MAKE_SHARED
@@ -399,20 +478,6 @@ int main(int argc, char *argv[]) {
   }
 #endif // ROOT_AS_PERSIST
 
-  // Bind mount / to /mnt/boot before mounting /mnt to target.
-#ifdef ROOT_AS_BOOT
-  fprintf(logfd, "SkiffOS init: mounting old / to %s\n", boot_parent_mnt);
-  if (stat(boot_parent_mnt, &st) == -1) {
-    mkdir(boot_parent_mnt, 0755);
-  }
-  if (mount("/", boot_parent_mnt, NULL, MS_BIND, NULL) != 0) {
-    res = errno;
-    fprintf(logfd, "SkiffOS: warning: failed to mount old / as %s: (%d) %s\n",
-            boot_parent_mnt, res, strerror(res));
-    res = 0; // ignore
-  }
-#endif // ROOT_AS_PERSIST
-
   fprintf(logfd, "SkiffOS init: mounting old /mnt to %s...\n", mnt_mnt);
   if (stat(mnt_mnt, &st) == -1) {
     mkdir(mnt_mnt, 0755);
@@ -445,18 +510,19 @@ int main(int argc, char *argv[]) {
 
   // Mount boot into the target chroot only.
 #ifdef ROOT_AS_BOOT
-  fprintf(logfd, "SkiffOS init: mounting / to %s...\n", boot_mnt);
+  fprintf(logfd, "SkiffOS init: mounting parent %s to %s...\n", boot_parent_mnt, boot_mnt);
   if (stat(boot_mnt, &st) == -1) {
     mkdir(boot_mnt, 0755);
   }
   // NOTE: MS_SHARED ?
-  if (mount("/", boot_mnt, NULL, MS_BIND|MS_SHARED, NULL) != 0) { // MS_REC - rbind
+  if (mount(boot_parent_mnt, boot_mnt, NULL, MS_BIND|MS_SHARED|MS_REC, NULL) != 0) { // MS_REC - rbind
     res = errno;
-    fprintf(logfd, "SkiffOS: warning: failed to mount / as %s: (%d) %s\n",
-            boot_mnt, res, strerror(res));
+    fprintf(logfd, "SkiffOS: warning: failed to mount %s as %s: (%d) %s\n",
+            boot_parent_mnt, boot_mnt,
+            res, strerror(res));
     res = 0; // ignore
   }
-#endif // ROOT_AS_PERSIST
+#endif // ROOT_AS_BOOT
 
 #endif // !BIND_ROOT_MNT
 
@@ -474,7 +540,7 @@ int main(int argc, char *argv[]) {
     res = errno;
     fprintf(logfd, "SkiffOS: failed to mount proc in chroot: (%d) %s\n", res,
             strerror(res));
-    return res;
+    res = 0;
   }
 #endif
 
@@ -485,7 +551,7 @@ int main(int argc, char *argv[]) {
     res = errno;
     fprintf(logfd, "SkiffOS: failed to mount /sys in chroot: (%d) %s\n", res,
             strerror(res));
-    return res;
+    res = 0;
   }
 #else
   fprintf(logfd, "SkiffOS init: mounting sysfs to %s...\n", sys_mnt);
@@ -493,13 +559,13 @@ int main(int argc, char *argv[]) {
     res = errno;
     fprintf(logfd, "SkiffOS: failed to mount sys in chroot: (%d) %s\n", res,
             strerror(res));
-    return res;
+    res = 0;
   }
 #endif
 #endif
 
   // Bind all of the extra host dirs into the container.
-  do_bind_host_dirs();
+  do_bind_host_paths();
 
   // Write PID file for init
 #ifdef WRITE_SKIFF_INIT_PID
@@ -721,10 +787,22 @@ void write_skiff_init_pid(pid_t pid) {
 #endif
 }
 
-// do_bind_host_dirs binds any extra host dirs defined in BIND_HOST_DIRS.
-void do_bind_host_dirs(void) {
-  struct stat st = {0};
-  const char* bhd = BIND_HOST_DIRS;
+int unlink_cb(const char *fpath, const struct stat *sb, int typeflag,
+              struct FTW *ftwbuf) {
+  int rv = remove(fpath);
+
+  if (rv)
+    perror(fpath);
+
+  return rv;
+}
+
+int rmrf(char *path) { return nftw(path, unlink_cb, 64, FTW_DEPTH | FTW_PHYS); }
+
+// do_bind_host_paths binds any extra host dirs defined in BIND_HOST_PATHS.
+void do_bind_host_paths(void) {
+  struct stat st, stSrc = {0};
+  const char* bhd = BIND_HOST_PATHS;
   int bhdlen = strlen(bhd);
   int mtptlen = strlen(mountpoint);
   int res = 0;
@@ -744,9 +822,9 @@ void do_bind_host_dirs(void) {
       continue;
     }
     // evaluate value
-    const char* mhost_dir = &bhd[i1];
+    const char* mhost_path = &bhd[i1];
     int mhost_len = 1;
-    const char* mtarget_dir = 0;
+    const char* mtarget_path = 0;
     int mtarget_len = 0;
     int tpath = 0;
     i1++;
@@ -759,7 +837,7 @@ void do_bind_host_dirs(void) {
           goto nextbhdmatch;
         }
         tpath = 1;
-        mtarget_dir = &bhd[i1+1];
+        mtarget_path = &bhd[i1+1];
         continue;
       }
       if (!tpath) {
@@ -772,45 +850,76 @@ void do_bind_host_dirs(void) {
       continue;
     }
 
-    char* host_dir = malloc((mhost_len+1) * sizeof(char));
-    memcpy(host_dir, mhost_dir, mhost_len);
-    host_dir[mhost_len] = 0;
+    char* host_path = malloc((mhost_len+1) * sizeof(char));
+    memcpy(host_path, mhost_path, mhost_len);
+    host_path[mhost_len] = 0;
 
     // prefix target dir with the chroot path.
-    char *target_dir = malloc(mtptlen + (mtarget_len + 1) * sizeof(char));
-    memcpy(target_dir, mountpoint, mtptlen);
-    memcpy(target_dir+mtptlen, mtarget_dir, mtarget_len);
-    target_dir[mtarget_len+mtptlen] = 0;
+    char *target_path = malloc(mtptlen + (mtarget_len + 1) * sizeof(char));
+    memcpy(target_path, mountpoint, mtptlen);
+    memcpy(target_path+mtptlen, mtarget_path, mtarget_len);
+    target_path[mtarget_len+mtptlen] = 0;
 
-    if (stat(host_dir, &st) != 0) {
+    if (stat(host_path, &stSrc) != 0) {
       fprintf(logfd, "SkiffOS init: extra bind path: %s -> %s: "
-              "host dir does not exist\n",
-              host_dir, target_dir);
+              "host path does not exist\n",
+              host_path, target_path);
       goto skipbhdmount;
     }
-    if (stat(target_dir, &st) != 0) {
-      if (mkdir(target_dir, 0755) != 0) {
+
+    int path_is_dir = S_ISDIR(stSrc.st_mode);
+
+    // if the target does exist, compare the file mode.
+    // re-create if the modes are different.
+    if (stat(target_path, &st) == 0) {
+      if (stSrc.st_mode != st.st_mode) {
+        rmrf(target_path);
+      }
+    }
+
+    // if the target doesn't exist: create it
+    if (stat(target_path, &st) != 0) {
+      // copy permissions from the source
+      int path_perms = stSrc.st_mode & 0777;
+      res = 0;
+      if (path_is_dir) {
+        if (mkdir(target_path, path_perms) != 0) {
+          res = errno;
+        }
+      } else {
+        int touchFd = open(target_path, O_RDWR | O_CREAT, path_perms);
+        if (touchFd < 0) {
+          res = errno;
+        } else {
+          close(touchFd);
+        }
+      }
+      if (res != 0) {
         res = errno;
         fprintf(logfd,
                 "SkiffOS init: extra bind path: %s -> %s: "
-                "cannot create target dir: (%d) %s\n",
-                host_dir, target_dir, res, strerror(res));
+                "cannot create target path: (%d) %s\n",
+                host_path, target_path, res, strerror(res));
         goto skipbhdmount;
       }
     }
 
-    if (mount(host_dir, target_dir, NULL, MS_BIND | MS_REC, NULL) != 0) {
+    unsigned long int flags = MS_BIND;
+    if (path_is_dir) {
+      flags = flags | MS_REC;
+    }
+    if (mount(host_path, target_path, NULL, flags, NULL) != 0) {
       res = errno;
-      fprintf(logfd, "SkiffOS: failed to mount extra bind path %s -> %s: (%d) %s\n", host_dir, target_dir, res,
-              strerror(res));
+      fprintf(logfd, "SkiffOS: failed to mount extra bind path %s -> %s: "
+              "(%d) %s\n", host_path, target_path, res, strerror(res));
       goto skipbhdmount;
     }
 
     fprintf(logfd, "SkiffOS init: mounted extra bind path: %s -> %s\n",
-            host_dir, target_dir);
+            host_path, target_path);
 
   skipbhdmount:
-    free(host_dir);
-    free(target_dir);
+    free(host_path);
+    free(target_path);
   }
 }
