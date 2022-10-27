@@ -24,7 +24,6 @@ RUN \
 # RUN echo 'deb [trusted=yes] http://voxl-packages.modalai.com/ qrb5165 stable' > /etc/apt/sources.list
 RUN echo 'deb [trusted=yes] http://voxl-packages.modalai.com/ qrb5165 sdk-0.8 staging stable' > /etc/apt/sources.list.d/modalai.list
 
-
 # Add voxl packages.
 # Subject to the ModalAI EULAs and licenses.
 # Note: more packages are available, see full list:
@@ -34,6 +33,9 @@ RUN echo 'deb [trusted=yes] http://voxl-packages.modalai.com/ qrb5165 sdk-0.8 st
 #  - voxl-px4: requires libfc-sensor (missing)
 #  - voxl-suite: requires voxl-px4
 RUN \
+  echo "ModalAI 3.7.0" > /etc/version && \
+  echo "/usr/lib64" > /etc/ld.so.conf.d/lib64.conf && \
+	mkdir -p /etc/modalai && \
   mv /bin/systemctl /bin/systemctl.bak && \
   printf "#!/bin/bash\nexit 0\n" > /bin/systemctl && \
   chmod +x /bin/systemctl && \
@@ -41,8 +43,9 @@ RUN \
   apt-get update && \
   apt-get dist-upgrade -y && \
   apt-get install -y  \
-  -o "Dpkg::Options::=--force-confdef"  \
-  -o "Dpkg::Options::=--force-confnew"  \
+    -o "Dpkg::Options::=--force-confdef"   \
+    -o "Dpkg::Options::=--force-confnew"   \
+    -o "Dpkg::Options::=--force-overwrite" \
     multiarch-support \
     qrb5165-dfs-server \
     qrb5165-imu-server \
@@ -69,25 +72,17 @@ RUN \
   mkdir -p /home/core/ && \
   chown core:core /home/core && \
   passwd -d core && \
-  echo "core    ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+  echo "core    ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/core && \
+  chmod 0440 /etc/sudoers.d/core
 
-RUN systemctl set-default graphical.target && \
-    systemctl mask tmp.mount && \
-    find /etc/systemd/system \
-         /lib/systemd/system \
-         \( -path '*.wants/*' \
-         -name '*swapon*' \
-         -or -name '*ntpd*' \
-         -or -name '*resolved*' \
-         -or -name '*udev*' \
-         -or -name '*freedesktop*' \
-         -or -name '*remount-fs*' \
-         -or -name '*getty*' \
-         -or -name '*systemd-sysctl*' \
-         -or -name '*.mount' \
-         -or -name '*remote-fs*' \) \
-         -exec echo \{} \; \
-         -exec rm \{} \;
+RUN touch /etc/ssh/sshd_not_to_be_run && \
+    rm /etc/systemd/system/sshd.service && \
+    systemctl set-default multi-user.target && \
+    systemctl mask tmp.mount persist.mount console-getty.service && \
+    systemctl mask NetworkManager wpa_supplicant sshd haveged && \
+    systemctl mask dhcpd systemd-timesyncd firewalld snapd && \
+    systemctl mask ssh ab-updater dnsmasq wpa_supplicant && \
+    systemctl mask sscrpcd
 
 WORKDIR /
 ENTRYPOINT ["/lib/systemd/systemd"]

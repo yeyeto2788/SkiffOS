@@ -1,0 +1,51 @@
+# This should be imported from the ModalAI system release.
+# https://github.com/skiffos/SkiffOS/tree/master/configs/modalai/voxl2#skiff-core-importing-vendor-provided-image
+FROM skiffos/skiff-core-voxl2:base
+
+# Update and install some packages.
+RUN \
+  chmod 1777 /tmp; \
+  export DEBIAN_FRONTEND=noninteractive; \
+  apt-get update && \
+  apt-get dist-upgrade -y && \
+  apt-get install -y  \
+  -o "Dpkg::Options::=--force-confdef"  \
+  -o "Dpkg::Options::=--force-confold"  \
+  build-essential autotools-dev locales usbutils sed \
+  rsync sudo software-properties-common vim \
+  lsb-release wget curl git unzip \
+  autotools-dev locales systemd wget \
+  && apt-get autoremove -y && \
+  rm -rf /var/lib/apt/lists/*
+
+# Create the user 'core' which will be the usual userspace account
+# Also allow core to run stuff as sudo without a password.
+RUN \
+  adduser core \
+  --no-create-home \
+  --gecos "SkiffOS Core" \
+  --shell /bin/bash \
+  --disabled-password && \
+  adduser core audio && \
+  adduser core sudo && \
+  adduser core root && \
+  adduser core systemd-journal && \
+  adduser core dialout && \
+  adduser core plugdev && \
+  mkdir -p /home/core/ && \
+  chown core:core /home/core && \
+  passwd -d core && \
+  echo "core    ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/core && \
+  chmod 0440 /etc/sudoers.d/core
+
+RUN touch /etc/ssh/sshd_not_to_be_run && \
+    rm /etc/systemd/system/sshd.service && \
+    systemctl set-default multi-user.target && \
+    systemctl mask tmp.mount persist.mount console-getty.service \
+    NetworkManager wpa_supplicant sshd haveged dhcpd systemd-timesyncd \
+    firewalld snapd init_sys_mss ssh ab-updater dnsmasq wpa_supplicant \
+    dhcpcd lunch-make-scripts sscrpcd systemd-networkd networkd-dispatcher \
+    openvpn QCMAP_ConnectionManagerd.service
+
+WORKDIR /
+ENTRYPOINT ["/lib/systemd/systemd"]

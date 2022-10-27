@@ -4,14 +4,17 @@ echo "SkiffOS U-Boot for Allwinner LicheeRV loaded from ${devtype} ${devnum}"
 setenv verify 0
 setenv bootlogo "false"
 
-# earlyprintk=sunxi-uart,0x02500000
-setenv condev "earlycon=sbi console=ttyS0,115200n8 loglevel=7"
+setenv condev "earlycon=sbi console=ttyS0,115200n8"
+
+setenv kernel_addr_r 0x40040000
+# setenv fdt_addr_r 0x41800000
+# setenv fdt_addr_r 0x42FEF080
 
 # use /init script to deferred mount /
 setenv bootmem "root=/dev/mmcblk0p1 rootwait rw init=/boot/skiff-init/skiff-init-squashfs"
 
 # base kernel config options
-setenv baseconfig "fsck.repair=yes net.ifnames=0 cma=96M"
+setenv baseconfig "fsck.repair=yes net.ifnames=0 cma=24M"
 
 # final boot args
 setenv bootargs "${bootmem} ${condev} ${baseconfig}"
@@ -21,8 +24,10 @@ echo "Loading Image..."
 ext4load ${devtype} ${devnum}:1 ${kernel_addr_r} /boot/Image
 
 # echo "Loading sun20i-d1-lichee-rv-dock.dtb..."
-# ext4load ${devtype} ${devnum}:1 ${fdt_addr_r} /boot/sun20i-d1-lichee-rv-dock.dtb
+ext4load ${devtype} ${devnum}:1 ${fdt_addr_r} /boot/sun20i-d1-lichee-rv-dock.dtb
 
-# Boot the board
-# booti ${kernel_addr_r} - ${fdt_addr_r}
+# Use the u-boot fdt
 booti ${kernel_addr_r} - ${fdtcontroladdr}
+
+# Use the kernel fdt (not working - page fault)
+# booti ${kernel_addr_r} - ${fdt_addr_r}
