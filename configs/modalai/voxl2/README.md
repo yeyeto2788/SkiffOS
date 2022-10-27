@@ -17,10 +17,28 @@ References:
  - https://git.codelinaro.org/clo/le/meta-qti-bsp/-/tree/LU.UM.1.2.1.r1-34500-QRB5165.0
  - https://git.codelinaro.org/clo/le/le/manifest at `LU.UM.1.2.1.r1-30500-QRB5165.0.xml`
  - http://releases.linaro.org/96boards/rb5/linaro/debian/21.08/
- 
+
 ## Getting Started
 
-Set the comma-separated `SKIFF_CONFIG` variable:
+To initialize the Voxl2 partition layout and other firmware files correctly,
+first flash the latest BSP package from ModalAI:
+
+ 1. Navigate to https://developer.modalai.com/categories
+ 2. Select "Voxl 2 Platform Releases"
+ 3. Click "download" on [the entry] `voxl2_platform_1.3.1-0.8.tar.gz`
+ 4. Extract the file: `tar -zxf voxl2_platform_1.3.1-0.8.tar.gz`
+ 5. Enter the directory: `cd voxl2_platform_1.3.1-0.8`
+ 6. Unplug the voxl2 from power and USBC.
+ 7. Using something soft, hold down the SW1 button on the board.
+ 8. While holding the button, connect the power to the board.
+ 9. After about 5 seconds, release button SW1.
+ 10. Run the install script: `./install.sh`
+
+[the entry]: https://developer.modalai.com/asset/eula-download/110
+
+After following these steps, your system should be in factory-reset state.
+
+To compile SkiffOS, set the comma-separated `SKIFF_CONFIG` variable:
 
 ```sh
 $ export SKIFF_CONFIG=modalai/voxl2,skiff/core
@@ -33,6 +51,7 @@ device. This will flash `apq8096-sysfs.ext4` to the `sysfs` partition and
 `apq8096-boot.img` to the `boot` partition.
 
 ```sh
+$ sudo bash
 $ make cmd/modalai/voxl/flashusb  # tell skiff to use fastboot to flash
 ```
 
@@ -40,41 +59,19 @@ SkiffOS will use the existing `userdata` partition as its `persist` partition.
 The flash script will not overwrite this partition, and can be used to update
 the system later without clearing user data.
 
-### OTA Update
-
-To over-the-air update an existing system, use the push_image script:
-
-```sh
-$ ./scripts/push_image.bash root@my-ip-address
-```
-
-The SkiffOS upgrade (or downgrade) will take effect on next reboot.
-
-### Boot Sequence and OTA
+### Partitions
 
 SkiffOS produces unsigned images for the `sysfs` and `boot` partitions, and uses
 existing `aboot`, `cache`, `persist`, `userdata`, `recoveryfs` from the factory.
 
-To enable remote OTA upgrades, `skiff-init-kexec` is used to execute the kernel
-`Image` located on the `sysfs` partition:
-
- 1. Kernel on the `boot` partition starts `/sbin/init` on `sysfs`.
- 2. The `/sbin/init` file is symlinked to `/boot/skiff-init/skiff-init-kexec`.
- 3. The `Image` is loaded from `/boot/Image` to memory.
- 4. The new kernel is booted by calling `kexec`.
- 5. The new kernel starts `/boot/skiff-init/skiff-init-squashfs`.
- 6. `/boot/skiff-init/skiff-init-squashfs` mounts `/boot/rootfs.squashfs`.
- 7. An overlay filesystem is mounted with a `tmpfs` to make `/` writable.
- 8. The init script chroots and starts `/usr/lib/systemd/systemd`.
+SkiffOS will use the `userdata` partition as its `persist` partition. It will
+not overwrite this partition during the flash script, so the flash script can be
+run multiple times without overwriting any container data.
 
 To update the bootloader and other partitions, download & flash the system image
 according to the [vendor docs], then run the SkiffOS flash script.
 
 [vendor docs]: https://docs.modalai.com/downloads/
-
-SkiffOS will use the `userdata` partition as its `persist` partition. It will
-not overwrite this partition during the flash script, so the flash script can be
-run multiple times without overwriting any container data.
 
 ### Skiff Core: Default Ubuntu-based Image
 
@@ -92,32 +89,27 @@ The vendor-provided system image can be imported to a skiff-core container. The
 drivers provided in the container will then provide all proprietary features:
 
 ```sh
-# Mount the base system image.
-simg2img apq8096-sysfs.ext4 apq8096-sysfs.ext4.raw
-mkdir -p mtpt
-sudo mount -o loop -t ext4 ./apq8096-sysfs.ext4.raw ./mtpt
+# Copy the modalai files to the device.
+# Replace "root@voxl2" with your voxl2 ip address.
+rsync --progress voxl2_platform_1.3.1-0.8.tar.gz root@voxl2:/mnt/persist/voxl2_platform.tar.gz
 
-# Import the base docker image.
-cd ./mtpt
-sudo tar -c . | docker import - skiffos/skiff-core-voxl2:base
+# Run the importer script to import the image.
+ssh root@voxl2
+voxl2-import-core.sh /mnt/persist/voxl2_platform.tar.gz
 
-# Unmount.
-cd ..
-sudo umount ./mtpt
+# The Docker image is imported at skiffos/skiff-core-voxl2:latest
+# Force skiff-core to load the new image.
+# NOTE: this will delete your existing core container!
+docker rm -f core
+systemctl restart skiff-core
 
-# Use the skiff-core-defconfig dockerfile to minimize the image.
-wget -O Dockerfile https://raw.githubusercontent.com/skiffos/SkiffOS/master/configs/skiff/core/buildroot_ext/package/skiff-core-defconfig/coreenv/Dockerfile.minimize
-docker build --build-arg "DISTRO=skiffos/skiff-core-voxl2:base" -t skiffos/skiff-core-voxl2:latest .
+# You may also want to cleanup some disk space:
+docker system prune
 ```
 
-Edit `/mnt/persist/skiff/core/config.yaml` and replace the image name with
-`skiffos/skiff-core-voxl2:latest`, then run `docker rm -f core` and then
-`systemctl restart skiff-core` to create the new core container.
+# Licenses
 
-# License Acknowledgment
-
-The ModelAI packages are provided under various licenses. Skiff does not
-directly redistribute any parts of the toolkit, but will download them from the
-upstream sources via Buildroot packages as part of the build process. Buildroot
-produce a bundle of license files with "make br/legal-info". It is the
-responsibility of the end user to follow all applicable licenses' terms.
+The ModelAI packages are provided under various licenses. SkiffOS does not
+redistribute these packages, but will download them from the upstream sources as
+part of the apt install steps in the Dockerfile. It is the responsibility of the
+end user to follow all applicable licenses' terms.

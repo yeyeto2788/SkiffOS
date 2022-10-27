@@ -4,7 +4,9 @@ containers:
     image: skiffos/skiff-core-voxl2:latest
     # systemd
     entrypoint: ["/lib/systemd/systemd"]
-    env: ["container=docker"]
+    env:
+      - "container=docker"
+      - "SLOT_SUFFIX=_a"
     stopSignal: RTMIN+3
     tty: true
     disableInit: true
@@ -16,6 +18,7 @@ containers:
       - /lib/modules:/lib/modules:ro
       - /mnt:/mnt
       - /run/udev:/run/udev
+      - /mnt/persist:/persist
       - /mnt/persist/skiff/core/repos/docker:/var/lib/docker
       - /mnt/persist/skiff/core/repos/log:/var/log
       - /mnt/persist/skiff/core/repos/tmp:/var/tmp

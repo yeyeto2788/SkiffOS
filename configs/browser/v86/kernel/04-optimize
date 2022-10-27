@@ -1,0 +1,39 @@
+CONFIG_EXPERT=y
+
+# Fill pages with zeros after freeing to release v86 memory.
+CONFIG_INIT_ON_FREE_DEFAULT_ON=y
+# CONFIG_PAGE_POISONING is not set
+
+# use maximum available cpu speed
+CONFIG_CPU_FREQ_DEFAULT_GOV_PERFORMANCE=y
+
+# disable N/A security features
+# note: the v86 emulator should not be considered secure
+# CONFIG_SECCOMP is not set
+# CONFIG_SECURITY is not set
+# CONFIG_SECURITY_APPARMOR is not set
+# CONFIG_SPECULATION_MITIGATIONS is not set
+# CONFIG_STACKPROTECTOR is not set
+# CONFIG_STACKPROTECTOR_STRONG is not set
+
+# v86 only supports a single-core processor.
+# CONFIG_SMP is not set
+# CONFIG_CPU_ISOLATION is not set
+# CONFIG_SCHED_CLUSTER is not set
+
+# v86 does not support dmi
+# CONFIG_DMI is not set
+
+# remove unnecessary cpu types
+CONFIG_X86_GENERIC=y
+CONFIG_PROCESSOR_SELECT=y
+# CONFIG_CPU_SUP_CYRIX_32 is not set
+# CONFIG_CPU_SUP_HYGON is not set
+# CONFIG_CPU_SUP_CENTAUR is not set
+# CONFIG_CPU_SUP_TRANSMETA_32 is not set
+# CONFIG_CPU_SUP_UMC_32 is not set
+# CONFIG_CPU_SUP_ZHAOXIN is not set
+# CONFIG_CPU_SUP_VORTEX_32 is not set
+
+# remove some debug symbols
+# CONFIG_KALLSYMS_ALL is not set
