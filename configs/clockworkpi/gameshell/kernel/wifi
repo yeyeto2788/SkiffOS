@@ -1,0 +1,12 @@
+# Broadcom brcmfmac FullMAC WiFi+BT driver (SDIO on MMC1)
+# Chip: BCM43430 (Ampak AP6212 module), SDIO ID 02D0:A9A6
+# Firmware: brcm/brcmfmac43430a0-sdio.bin + brcmfmac43430a0-sdio.txt
+CONFIG_WLAN=y
+CONFIG_CFG80211=y
+CONFIG_BRCMFMAC=y
+CONFIG_BRCMFMAC_PROTO_BCDC=y
+CONFIG_BRCMFMAC_SDIO=y
+
+# Bluetooth rfkill control (reset PL8, shutdown PL10)
+CONFIG_RFKILL=y
+CONFIG_RFKILL_GPIO=y

@@ -1,0 +1,3 @@
+BR2_LINUX_KERNEL_DTS_SUPPORT=y
+# DTS added via kernel_patches/0001-ARM-dts-sun8i-add-clockworkpi-cpi3.patch
+BR2_LINUX_KERNEL_INTREE_DTS_NAME="allwinner/sun8i-r16-clockworkpi-cpi3"

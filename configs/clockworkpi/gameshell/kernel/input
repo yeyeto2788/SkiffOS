@@ -1,0 +1,9 @@
+# GameShell buttons are handled by a USB HID keyboard MCU
+# (rancidbacon.com UsbKeyboard, USB ID 4242:E131) connected to the
+# OHCI port. There are no gpio-keys in the hardware.
+CONFIG_HID=y
+CONFIG_USB_HID=y
+CONFIG_HID_GENERIC=y
+
+# AXP20x power button (via PMIC interrupt)
+CONFIG_INPUT_AXP20X_PEK=y

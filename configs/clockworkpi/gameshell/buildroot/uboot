@@ -1,0 +1,21 @@
+# Bootloader: U-Boot with Allwinner sunxi SPL
+BR2_TARGET_UBOOT=y
+BR2_TARGET_UBOOT_BUILD_SYSTEM_KCONFIG=y
+BR2_TARGET_UBOOT_CUSTOM_VERSION=y
+BR2_TARGET_UBOOT_CUSTOM_VERSION_VALUE="2025.10"
+
+# Using A33-OLinuXino defconfig as the closest upstream A33 board.
+# Both use Allwinner A33 with LPDDR3. DRAM params (CLK=432, ZQ=15291,
+# ODT_EN=y) are identical. If U-Boot hangs at DRAM init, capture
+# `printenv` output from a working GameShell to extract tuned values.
+BR2_TARGET_UBOOT_BOARD_DEFCONFIG="A33-OLinuXino"
+
+BR2_TARGET_UBOOT_FORMAT_CUSTOM=y
+BR2_TARGET_UBOOT_FORMAT_CUSTOM_NAME="u-boot-sunxi-with-spl.bin"
+
+BR2_TARGET_UBOOT_NEEDS_DTC=y
+BR2_TARGET_UBOOT_NEEDS_PYLIBFDT=y
+
+# Required for recent Allwinner U-Boot builds
+# https://github.com/skiffos/SkiffOS/issues/325
+BR2_TARGET_UBOOT_CUSTOM_MAKEOPTS="SCP=/dev/null"

@@ -1,0 +1,21 @@
+# GPIO bit-banged SPI bus for KD027/ILI9342C LCD
+# The GameShell uses GPIO SPI (PC0=MOSI, PC2=SCK, PC3=CS) without
+# a dedicated hardware SPI controller.
+CONFIG_SPI=y
+CONFIG_SPI_BITBANG=y
+CONFIG_SPI_GPIO=y
+
+# fbtft staging driver - ILI9341 is compatible with ILI9342C
+CONFIG_FB=y
+CONFIG_STAGING=y
+CONFIG_FB_TFT=y
+CONFIG_FB_TFT_ILI9341=y
+
+# GPIO-controlled backlight (PH1)
+CONFIG_BACKLIGHT_CLASS_DEVICE=y
+CONFIG_BACKLIGHT_GPIO=y
+
+# DRM display engine (sun4i/sun8i)
+CONFIG_DRM=y
+CONFIG_DRM_SUN4I=y
+CONFIG_DRM_SUN8I_MIXER=y

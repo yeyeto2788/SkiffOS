@@ -1,0 +1,4 @@
+# Broadcom BCM43430 (AP6212) firmware for WiFi+BT on MMC1/SDIO
+# Loaded as: brcm/brcmfmac43430a0-sdio.bin + brcmfmac43430a0-sdio.txt
+BR2_PACKAGE_LINUX_FIRMWARE=y
+BR2_PACKAGE_LINUX_FIRMWARE_BRCM_BCM43XX=y
